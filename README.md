@@ -1,29 +1,38 @@
 # VALORANT RACE
 
-Painel web de evolução da equipe, feito com React, Vite e uma API Node/Express.
+Aplicação web React/Vite com API Node/Express. O painel, avaliações e objetivos são lidos de um armazenamento no servidor, então todos os visitantes veem os mesmos resultados. A administração exige senha e a API valida a sessão no backend.
 
-## Executar no Windows
+## Rodar localmente
 
-1. Copie `.env.example` para `.env` e substitua `ADMIN_PASSWORD` por uma senha sua. Não compartilhe o `.env`.
-2. Instale as dependências e inicie o app:
+1. Copie `.env.example` para `.env` e altere `ADMIN_PASSWORD` e `SESSION_SECRET`.
+2. Execute:
 
 ```powershell
 npm.cmd install
 npm.cmd run dev
 ```
 
-3. Abra `http://localhost:5173/`. A área **Administração** solicita a senha configurada no `.env`.
+O comando local inicia Vite e API para desenvolvimento. A hospedagem pública usa Render e não depende do computador do organizador.
 
-O comando `npm run dev` inicia o Vite e a API. A edição dos objetivos é validada e protegida no servidor; as versões anteriores ficam em `server/data/objectives.json`. Novas avaliações guardam uma cópia dos objetivos vigentes.
+## Publicar no Render
 
-## Persistência e limites atuais
+1. Coloque a pasta do projeto em um repositório GitHub privado. O `.gitignore` exclui `.env`, dependências e dados locais.
+2. No Render, crie um **Blueprint** a partir do repositório e use o arquivo `render.yaml`.
+3. Informe um valor forte para `ADMIN_PASSWORD` quando o Render solicitar. O Blueprint cria um `SESSION_SECRET` e um disco persistente de 1 GB.
+4. Após o deploy, abra a URL `*.onrender.com` criada pelo Render. O serviço faz build de `dist`, serve o site e executa a API no mesmo domínio.
 
-Os objetivos e seu histórico ficam no arquivo JSON do servidor. Avaliações, feedbacks e outras informações continuam no `localStorage` do navegador, então ainda não sincronizam entre dispositivos. Para hospedar o app, configure HTTPS, `ADMIN_PASSWORD` e um `SESSION_SECRET` forte no ambiente do servidor. Nunca publique segredos no frontend.
+O plano `starter` mantém o serviço ativo sem suspensão por inatividade. O custo de referência é US$ 7/mês pelo serviço mais US$ 0,25/GB/mês do disco de 1 GB (aproximadamente US$ 7,25/mês, antes de uso excedente e impostos; confirme os valores no painel do Render). O plano grátis não atende ao requisito de disponibilidade contínua: ele suspende o serviço depois de 15 minutos sem tráfego, e o sistema de arquivos é temporário.
+
+## Persistência e limites
+
+Os dados compartilhados do torneio são salvos em `DATA_DIR/objectives.json`; no Render, o disco persistente é montado em `/var/data`. Faça backups desse arquivo antes de mudanças importantes. O projeto usa armazenamento JSON e uma instância única, adequado para este grupo pequeno; se houver crescimento ou necessidade de alta disponibilidade, migre para PostgreSQL.
+
+A autenticação está ativa para salvar objetivos e avaliações. O administrador usa uma senha única definida como variável de ambiente; nunca a coloque no frontend ou em repositório. A disponibilidade contínua de um serviço não equivale a uma garantia de 100% de uptime.
 
 ## Estrutura
 
-- `src/App.jsx`: telas, ranking, perfis, avaliações e área administrativa.
-- `src/data.js`: dados iniciais e categorias.
-- `src/styles.css`: identidade visual responsiva.
-- `server/index.js`: autenticação de sessão e API de objetivos.
-- `vite.config.js`: proxy local da API.
+- `src/App.jsx`: interface, ranking, perfis, avaliação e administração.
+- `src/data.js`: dados iniciais.
+- `src/styles.css`: visual responsivo.
+- `server/index.js`: API, autenticação e persistência.
+- `render.yaml`: configuração de implantação e disco persistente.
