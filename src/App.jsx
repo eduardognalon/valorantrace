@@ -65,7 +65,7 @@ export default function App() {
 
   async function loginAdmin(password) {
     try { await signInWithEmailAndPassword(auth, import.meta.env.VITE_ADMIN_EMAIL, password); }
-    catch { throw new Error('Senha incorreta.'); }
+    catch (error) { console.error(error.code); throw new Error('Senha incorreta.'); }
   }
 
   async function logoutAdmin() { await signOut(auth); }
