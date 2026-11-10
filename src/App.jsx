@@ -1,13 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Activity, ArrowDownRight, ArrowUpRight, Award, BarChart3, ChevronRight, CircleHelp, Crosshair, Flag, Gamepad2, LayoutDashboard, Medal, Plus, Shield, SlidersHorizontal, Sparkles, Target, Trophy, Users, X } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { CATEGORIES, loadData } from './data';
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { collection, doc, onSnapshot, orderBy, query, setDoc, writeBatch } from 'firebase/firestore';
+import { auth, db } from './firebase';
+import { CATEGORIES, INITIAL_DATA } from './data';
+
+const STATE_REF = doc(db, 'race', 'state');
 
 const fmt = n => new Intl.NumberFormat('pt-BR').format(n);
 const dateLabel = d => new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
 
 export default function App() {
-  const [data, setData] = useState(loadData);
+  const [data, setData] = useState(() => ({ ...INITIAL_DATA, objectiveHistory: {} }));
   const [page, setPage] = useState('overview');
   const [selected, setSelected] = useState(null);
   const [modal, setModal] = useState(false);
@@ -16,24 +21,24 @@ export default function App() {
   const [adminAuthenticated, setAdminAuthenticated] = useState(false);
 
   useEffect(() => {
-    const sync = () => fetch('/api/data').then(response => response.ok ? response.json() : null).then(remote => {
-      if (!remote) return;
-      setData(current => {
-        const next = { ...current, ...remote };
-        localStorage.setItem('valorant-race-v1', JSON.stringify(next));
-        return next;
-      });
-    }).catch(() => {});
-    sync();
-    const timer = window.setInterval(sync, 30000);
-    fetch('/api/auth/me').then(response => response.json()).then(result => setAdminAuthenticated(result.authenticated)).catch(() => {});
-    return () => window.clearInterval(timer);
+    // Objetivos, histórico e resgates: um documento só, atualizado em tempo real
+    const unsubState = onSnapshot(STATE_REF, snap => {
+      const remote = snap.exists() ? snap.data() : {};
+      setData(current => ({
+        ...current,
+        objectives: { ...INITIAL_DATA.objectives, ...(remote.objectives || {}) },
+        objectiveHistory: remote.objectiveHistory || {},
+        redeemed: remote.redeemed || []
+      }));
+    });
+    // Avaliações: uma por documento, em ordem de criação
+    const unsubEvals = onSnapshot(query(collection(db, 'evaluations'), orderBy('createdAt')), snap => {
+      setData(current => ({ ...current, evaluations: snap.docs.map(d => d.data()) }));
+    });
+    // Admin = quem está logado no Firebase Auth
+    const unsubAuth = onAuthStateChanged(auth, user => setAdminAuthenticated(Boolean(user)));
+    return () => { unsubState(); unsubEvals(); unsubAuth(); };
   }, []);
-
-  function update(next) {
-    setData(next);
-    localStorage.setItem('valorant-race-v1', JSON.stringify(next));
-  }
 
   const players = useMemo(() => data.players.map(p => {
     const own = data.evaluations.filter(e => e.playerId === p.id);
@@ -42,20 +47,28 @@ export default function App() {
   const totalEvaluations = data.evaluations.length;
 
   async function saveObjectives(playerId, objectives) {
-    const response = await fetch(`/api/objectives/${playerId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ objectives }) });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || 'Não foi possível salvar os objetivos.');
-    update(result);
+    const clean = objectives.map(value => value.trim());
+    if (clean.length !== 5 || clean.some(value => !value || value.length > 140)) {
+      throw new Error('Informe exatamente cinco objetivos, com até 140 caracteres cada.');
+    }
+    const previous = data.objectives[playerId] || [];
+    const history = [...(data.objectiveHistory?.[playerId] || [])];
+    clean.forEach((description, index) => {
+      if (previous[index] && previous[index] !== description) {
+        history.push({ description: previous[index], status: 'Substituído', changedAt: new Date().toISOString() });
+      }
+    });
+    try {
+      await setDoc(STATE_REF, { objectives: { [playerId]: clean }, objectiveHistory: { [playerId]: history } }, { merge: true });
+    } catch { throw new Error('Não foi possível salvar. Verifique se você está logado como administrador.'); }
   }
 
   async function loginAdmin(password) {
-    const response = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || 'Não foi possível entrar.');
-    setAdminAuthenticated(true);
+    try { await signInWithEmailAndPassword(auth, import.meta.env.VITE_ADMIN_EMAIL, password); }
+    catch { throw new Error('Senha incorreta.'); }
   }
 
-  async function logoutAdmin() { await fetch('/api/auth/logout', { method: 'POST' }); setAdminAuthenticated(false); }
+  async function logoutAdmin() { await signOut(auth); }
 
   function openEvaluation() {
     if (!adminAuthenticated) { setPage('admin'); return; }
@@ -75,16 +88,15 @@ export default function App() {
       return { id: crypto.randomUUID(), playerId: player.id, objectives: [...(data.objectives[player.id] || [])], date: form.date || new Date().toISOString().slice(0, 10), total: notes.reduce((sum, n) => sum + n.score, 0), notes, feedback: form[`${player.id}_feedback`] || '' };
     });
     try {
-      const response = await fetch('/api/evaluations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ evaluations: items }) });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Não foi possível salvar as avaliações.');
-      update(result); setModal(false); setForm({});
-    } catch (error) { window.alert(error.message); }
-  }
-
-  function redeem(goalId, playerId) {
-    const goal = data.goals.find(g => g.id === goalId);
-    update({ ...data, redeemed: [...data.redeemed, { goalId, playerId, date: new Date().toISOString() }] });
+      if (items.some(item => item.notes.some(n => !Number.isInteger(n.score) || n.score < 0 || n.score > 10))) {
+        throw new Error('Cada avaliação precisa de cinco notas inteiras de 0 a 10.');
+      }
+      const batch = writeBatch(db);
+      const createdAt = Date.now();
+      items.forEach(item => batch.set(doc(db, 'evaluations', item.id), { ...item, createdAt }));
+      await batch.commit();
+      setModal(false); setForm({});
+    } catch (error) { window.alert(error.message || 'Não foi possível salvar as avaliações.'); }
   }
 
   const earned = goal => data.redeemed.filter(r => r.goalId === goal.id);

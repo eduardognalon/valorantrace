@@ -12,17 +12,19 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "concurrently": "latest",
     "@vitejs/plugin-react": "latest",
+    "concurrently": "latest",
     "cookie-session": "latest",
     "dotenv": "latest",
     "express": "latest",
-    "vite": "latest",
+    "firebase": "^13.2.0",
+    "lucide-react": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "lucide-react": "latest",
-    "recharts": "latest"
+    "recharts": "latest",
+    "vite": "latest"
   },
-  "devDependencies": {},
-  "engines": { "node": ">=22" }
+  "engines": {
+    "node": ">=22"
+  }
 }
