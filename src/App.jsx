@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Activity, ArrowDownRight, ArrowUpRight, Award, BarChart3, ChevronRight, CircleHelp, Crosshair, Flag, Gamepad2, LayoutDashboard, Medal, Plus, Shield, SlidersHorizontal, Sparkles, Target, Trophy, Users, X } from 'lucide-react';
-import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { collection, doc, onSnapshot, orderBy, query, setDoc, writeBatch } from 'firebase/firestore';
 import { auth, db } from './firebase';
@@ -127,7 +127,7 @@ export default function App() {
 
         <div className="content-grid">
           <section className="panel race-panel"><div className="panel-heading"><div><div className="eyebrow">PLACAR DA TEMPORADA</div><h2>Corrida dos jogadores</h2><p>Pontuação acumulada · primeiro até o próximo marco</p></div><div className="season-tag"><span className="live-dot"/> AO VIVO</div></div>
-            <div className="chart-wrap">{players.length ? <ResponsiveContainer width="100%" height={270}><BarChart data={bars} layout="vertical" margin={{ top: 8, right: 14, bottom: 8, left: -8 }} barCategoryGap={22}><CartesianGrid horizontal={false} stroke="#27303d"/><XAxis type="number" domain={[0, maxPoints]} tickLine={false} axisLine={false} tick={{ fill: '#788391', fontSize: 11 }} tickFormatter={fmt}/><YAxis type="category" dataKey="name" tickLine={false} axisLine={false} width={64} tick={<CustomAxis/>}/><Tooltip cursor={{ fill: 'rgba(255,255,255,.025)' }} content={<ChartTooltip/>}/><Bar dataKey="score" radius={[0, 5, 5, 0]} maxBarSize={25} background={{ fill: '#171f2a', radius: 5 }}>{bars.map(p => <Cell key={p.id} fill={p.color}/>)}</Bar></BarChart></ResponsiveContainer> : null}
+            <div className="chart-wrap">{players.length ? <ResponsiveContainer width="100%" height={270}><BarChart data={bars} layout="vertical" margin={{ top: 8, right: 14, bottom: 8, left: -8 }} barCategoryGap={14}><XAxis type="number" domain={[0, maxPoints]} tickLine={false} axisLine={false} tick={false}/><YAxis type="category" dataKey="name" tickLine={false} axisLine={false} width={64} tick={<CustomAxis/>}/><Tooltip cursor={{ fill: 'rgba(255,255,255,.025)' }} content={<ChartTooltip/>}/><Bar dataKey="score" radius={[0, 5, 5, 0]} maxBarSize={38} background={{ fill: '#171f2a', radius: 5 }}>{bars.map(p => <Cell key={p.id} fill={p.color}/>)}</Bar></BarChart></ResponsiveContainer> : null}
               <div className="milestone-track">{data.goals.map(g => <div key={g.id} className="track-marker" style={{ left: `${Math.min(98, g.points / maxPoints * 100)}%` }}><span className={`marker-line ${earned(g).length ? 'reached' : ''}`}/><span className="marker-label">{g.points}</span></div>)}</div>
             </div><div className="chart-legend"><span><i className="legend-dot red"/> Líder</span><span><i className="legend-dot gray"/> Jogadores</span><span><i className="legend-dash"/> Marcos de recompensa</span></div>
           </section>
