@@ -8,6 +8,13 @@ import { CATEGORIES, INITIAL_DATA } from './data';
 
 const STATE_REF = doc(db, 'race', 'state');
 
+// Nota do dia (análise geral, sem objetivo): de 1 a 7.
+// true = soma nos pontos da corrida; false = fica só registrada, sem somar.
+const DAY_SCORE_COUNTS_IN_TOTAL = true;
+const DAY_SCORE_MIN = 1;
+const DAY_SCORE_MAX = 7;
+const MAX_TOTAL = CATEGORIES.length * 10 + (DAY_SCORE_COUNTS_IN_TOTAL ? DAY_SCORE_MAX : 0);
+
 const fmt = n => new Intl.NumberFormat('pt-BR').format(n);
 const dateLabel = d => new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
 
@@ -84,12 +91,17 @@ export default function App() {
   async function saveEvaluation(e) {
     e.preventDefault();
     const items = data.players.map(player => {
+      const dayScore = Number(form[`${player.id}_day`] || 0);
       const notes = CATEGORIES.map((_, i) => ({ score: Number(form[`${player.id}_n${i}`] || 0), feedback: form[`${player.id}_f${i}`] || '' }));
-      return { id: crypto.randomUUID(), playerId: player.id, objectives: [...(data.objectives[player.id] || [])], date: form.date || new Date().toISOString().slice(0, 10), total: notes.reduce((sum, n) => sum + n.score, 0), notes, feedback: form[`${player.id}_feedback`] || '' };
+      return { id: crypto.randomUUID(), playerId: player.id, objectives: [...(data.objectives[player.id] || [])], date: form.date || new Date().toISOString().slice(0, 10), dayScore, total: notes.reduce((sum, n) => sum + n.score, 0) + (DAY_SCORE_COUNTS_IN_TOTAL ? dayScore : 0), maxTotal: MAX_TOTAL, notes, feedback: form[`${player.id}_feedback`] || '' };
     });
     try {
       if (items.some(item => item.notes.some(n => !Number.isInteger(n.score) || n.score < 0 || n.score > 10))) {
         throw new Error('Cada avaliação precisa de cinco notas inteiras de 0 a 10.');
+      }
+      const invalidDay = items.find(item => !Number.isInteger(item.dayScore) || item.dayScore < DAY_SCORE_MIN || item.dayScore > DAY_SCORE_MAX);
+      if (invalidDay) {
+        throw new Error(`Informe a nota do dia (${DAY_SCORE_MIN} a ${DAY_SCORE_MAX}) de ${data.players.find(p => p.id === invalidDay.playerId)?.name}.`);
       }
       const batch = writeBatch(db);
       const createdAt = Date.now();
@@ -147,7 +159,7 @@ function StatCard({ label, value, detail, icon, accent, extra }) { return <div c
 function CustomAxis({ x, y, payload }) { return <g transform={`translate(${x},${y})`}><text x={0} y={0} dy={4} textAnchor="start" fill="#cbd2dc" fontSize={12} fontWeight={600}>{payload.value}</text></g>; }
 function ChartTooltip({ active, payload }) { if (!active || !payload?.length) return null; const p = payload[0].payload; return <div className="chart-tooltip"><b style={{ color: p.color }}>{p.name}</b><strong>{fmt(p.score)} <small>PTS</small></strong></div>; }
 function PlayerCard({ p, index, objectives, onClick }) { return <button className="player-card" onClick={onClick}><div className="player-card-top"><div className="player-avatar" style={{ '--player-color': p.color }}>{p.avatar}</div><div className="player-card-rank">#{String(index + 1).padStart(2, '0')}</div></div><h3>{p.name}</h3><div className="player-rank-label">{p.rank}</div><div className="player-card-score"><b style={{ color: p.color }}>{fmt(p.score)}</b><small>PTS</small><span>{p.days} dias</span></div><div className="mini-progress"><i style={{ width: `${Math.min(100, p.score / 1000 * 100)}%`, background: p.color }}/></div><div className="objective-peek"><span>OBJETIVOS ATIVOS</span><b>{objectives.length || 0} objetivos</b></div><div className="card-link">Ver análise individual <ChevronRight size={15}/></div></button>; }
-function EvaluationHistoryRow({ evaluation, player }) { return <div className="history-row"><div><b>{dateLabel(evaluation.date)}</b><small>{evaluation.feedback || 'Sem feedback geral'}</small>{evaluation.objectives?.length > 0 && <details className="history-goals"><summary>Ver objetivos avaliados</summary>{evaluation.objectives.map((objective, i) => <div key={i}><span>{objective}</span><b>{evaluation.notes?.[i]?.score ?? '—'} / 10</b>{evaluation.notes?.[i]?.feedback && <small className="goal-feedback">{evaluation.notes[i].feedback}</small>}</div>)}</details>}</div><strong style={{ color: player.color }}>{evaluation.total}<small> / 50</small></strong></div>; }
+function EvaluationHistoryRow({ evaluation, player }) { return <div className="history-row"><div><b>{dateLabel(evaluation.date)}</b><small>{evaluation.feedback || 'Sem feedback geral'}</small>{evaluation.objectives?.length > 0 && <details className="history-goals"><summary>Ver objetivos avaliados</summary>{evaluation.objectives.map((objective, i) => <div key={i}><span>{objective}</span><b>{evaluation.notes?.[i]?.score ?? '—'} / 10</b>{evaluation.notes?.[i]?.feedback && <small className="goal-feedback">{evaluation.notes[i].feedback}</small>}</div>)}{evaluation.dayScore != null && <div><span>Nota do dia</span><b>{evaluation.dayScore} / {DAY_SCORE_MAX}</b></div>}</details>}</div><strong style={{ color: player.color }}>{evaluation.total}<small> / {evaluation.maxTotal || 50}</small></strong></div>; }
 function AdminScreen({ data, initialPlayerId, onSave, authenticated, onLogin, onLogout, onAddEvaluation }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -173,7 +185,7 @@ function EvaluationModal({ data, form, setForm, onClose, onSave }) {
   const isSummary = step >= data.players.length;
   const player = data.players[Math.min(step, data.players.length - 1)];
   const goals = data.objectives[player.id] || [];
-  const playerTotal = id => CATEGORIES.reduce((sum, _, i) => sum + Number(form[`${id}_n${i}`] || 0), 0);
+  const playerTotal = id => CATEGORIES.reduce((sum, _, i) => sum + Number(form[`${id}_n${i}`] || 0), 0) + (DAY_SCORE_COUNTS_IN_TOTAL ? Number(form[`${id}_day`] || 0) : 0);
   const setValue = (key, value) => setForm(previous => ({ ...previous, [key]: value }));
   return <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}><div className="modal">
     <div className="modal-head"><div><div className="eyebrow">ADMINISTRAÇÃO · NOVO REGISTRO</div><h2>{isSummary ? 'Revisar avaliações' : 'Adicionar avaliação'}</h2><p>{isSummary ? 'Confira o resumo antes de salvar as avaliações.' : 'Avalie os objetivos atuais de cada jogador.'}</p></div><button className="icon-button" onClick={onClose}><X size={18}/></button></div>
@@ -181,9 +193,10 @@ function EvaluationModal({ data, form, setForm, onClose, onSave }) {
       <div className="step-tabs">{data.players.map((p, i) => <button type="button" key={p.id} onClick={() => setStep(i)} className={step === i ? 'current' : ''}><span>{i + 1}</span>{p.name}</button>)}<button type="button" onClick={() => setStep(data.players.length)} className={isSummary ? 'current' : ''}><span>✓</span>Resumo</button></div>
       {!isSummary ? <><div className="eval-player"><div className="player-avatar small" style={{ '--player-color': player.color }}>{player.avatar}</div><div><b>{player.name}</b><small>{player.rank} · {goals.length} objetivos ativos</small></div><label>Data<input type="date" value={form.date || new Date().toISOString().slice(0, 10)} onChange={e => setValue('date', e.target.value)}/></label></div>
         <div className="eval-goals">{goals.map((goal, i) => <div className="eval-goal" key={i}><div className="eval-goal-name"><span>{String(i + 1).padStart(2, '0')}</span><b>{goal}</b></div><div className="eval-inputs"><label>Nota <input type="number" min="0" max="10" required placeholder="0–10" value={form[`${player.id}_n${i}`] ?? ''} onChange={e => setValue(`${player.id}_n${i}`, e.target.value)}/></label><label>Feedback do objetivo <input placeholder="Comentário breve (opcional)" value={form[`${player.id}_f${i}`] || ''} onChange={e => setValue(`${player.id}_f${i}`, e.target.value)}/></label></div></div>)}</div>
+        <div className="eval-goal day-score"><div className="eval-goal-name"><span>★</span><b>Nota do dia</b></div><div className="eval-inputs"><label>Nota <input type="number" min={DAY_SCORE_MIN} max={DAY_SCORE_MAX} required placeholder={`${DAY_SCORE_MIN}–${DAY_SCORE_MAX}`} value={form[`${player.id}_day`] ?? ''} onChange={e => setValue(`${player.id}_day`, e.target.value)}/></label><span className="day-hint">Análise geral do desempenho no dia</span></div></div>
         <label className="general-feedback">Feedback geral<textarea rows="2" placeholder="Observações para este jogador..." value={form[`${player.id}_feedback`] || ''} onChange={e => setValue(`${player.id}_feedback`, e.target.value)}/></label>
-      </> : <div className="review-list">{data.players.map(p => <div className="review-row" key={p.id}><span className="player-dot" style={{ background: p.color }}/><b>{p.name}</b><small>{p.rank}</small><strong>{playerTotal(p.id)} / 50</strong></div>)}</div>}
-      <div className="modal-footer"><span>{isSummary ? <>Data <b>{form.date || new Date().toLocaleDateString('pt-BR')}</b></> : <>Nota total <b>{playerTotal(player.id)} / 50</b></>}</span><div>{step > 0 && <button type="button" className="button ghost" onClick={() => setStep(step - 1)}>Anterior</button>}{!isSummary ? <button type="button" className="button primary" onClick={() => setStep(step + 1)}>{step === data.players.length - 1 ? 'Revisar resumo' : 'Próximo jogador'} <ChevronRight size={15}/></button> : <button type="submit" className="button primary">Confirmar e salvar</button>}</div></div>
+      </> : <div className="review-list">{data.players.map(p => <div className="review-row" key={p.id}><span className="player-dot" style={{ background: p.color }}/><b>{p.name}</b><small>{p.rank}</small><strong>{playerTotal(p.id)} / {MAX_TOTAL}</strong></div>)}</div>}
+      <div className="modal-footer"><span>{isSummary ? <>Data <b>{form.date || new Date().toLocaleDateString('pt-BR')}</b></> : <>Nota total <b>{playerTotal(player.id)} / {MAX_TOTAL}</b></>}</span><div>{step > 0 && <button type="button" className="button ghost" onClick={() => setStep(step - 1)}>Anterior</button>}{!isSummary ? <button type="button" className="button primary" onClick={() => setStep(step + 1)}>{step === data.players.length - 1 ? 'Revisar resumo' : 'Próximo jogador'} <ChevronRight size={15}/></button> : <button type="submit" className="button primary">Confirmar e salvar</button>}</div></div>
     </form></div></div>;
 }
 
